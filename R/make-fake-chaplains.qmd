@@ -1,0 +1,34 @@
+---
+title: "Create fake waterways chaplains"
+author: "Dave"
+format: html
+editor: visual
+---
+
+## Intro
+
+We'd like to mock up a working example of a proposed data collection solution. That means mocking up responses and responders.
+
+## Libraries
+
+```{r libraries}
+library(conflicted)
+
+library(here)
+library(fs)
+
+library(dplyr)
+conflicted::conflicts_prefer(dplyr::filter)
+library(randomNames)
+```
+
+## Generate random names
+
+```{r generate_random_names}
+set.seed(1992)
+
+n_names <- 15
+
+first_names <- randomNames(n_names, ethnicity = 5, which.names = "first")
+last_names  <- randomNames(n_names, ethnicity = 5, which.names = "last")
+```
