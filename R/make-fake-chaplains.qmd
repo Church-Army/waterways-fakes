@@ -20,9 +20,12 @@ library(fs)
 library(dplyr)
 conflicted::conflicts_prefer(dplyr::filter)
 library(randomNames)
+library(stringr)
+library(purrr)
+library(vroom)
 ```
 
-## Generate random names
+## Make fake chaplains
 
 ```{r generate_random_names}
 set.seed(1992)
@@ -31,4 +34,151 @@ n_names <- 15
 
 first_names <- randomNames(n_names, ethnicity = 5, which.names = "first")
 last_names  <- randomNames(n_names, ethnicity = 5, which.names = "last")
+
+emails <- str_c(str_to_lower(first_names),
+                ".", 
+                str_to_lower(last_names),
+                "@gmail.com")
+
+chaplains <- tibble(first_name = first_names,
+                    last_name  = last_names,
+                    email_address = emails)
+
+head(chaplains)
+```
+
+## Make fake responses
+
+### Checkbox response faking
+
+```{r make_fake_responses}
+
+people <- 
+  c("liveaboards", "leisure owners",
+    "leisure hirers/visitors", "fisher(wo)men",
+    "Towpath users", "Ex HM Forces",
+    "Navigation Authority staff or volunteers",
+    "Homeless", "Waterside business staff", 
+    "Waterside residents")
+
+people_probs <-
+  rnorm(length(people), 0.35, sd = 0.1)
+
+fake_people <- function(n){
+  map_chr(1:n,
+      \(x){
+        randoms <- runif(length(people))
+        people[randoms < people_probs] |> 
+        str_c(collapse = ", ")})
+  }
+
+fake_people(3)
+
+concerns <- c(
+  "financial hardship/benefits", 
+  "physical health",
+  "mental health",
+  "suicidal thoughts",
+  "PTSD",
+  "Faith and religion",
+  "Boat worthiness",
+  "Boat licensing and mooring",
+  "Addiction (alcohol and/or drugs)",
+  "Homelessness",
+  "Personal relationships",
+  "(Un)employment",
+  "Crime",
+  "Death and bereavement",
+  "Moving onto land"
+)
+
+concerns_probs <-
+  rnorm(length(concerns), 0.35, sd = 0.1)
+
+fake_concerns <- function(n){
+  map_chr(1:n,
+      \(x){
+        randoms <- runif(length(concerns))
+        concerns[randoms < concerns_probs] |> 
+        str_c(collapse = ", ")})
+  }
+
+fake_concerns(3)
+
+```
+
+### Response date faking
+
+```{r response_date_faking}
+random_dates <- function(n){
+  day <-
+    sample(1:30, n) |> 
+    as.character()
+
+  day[nchar(day) == 1] <- 
+    str_c("0", day[nchar(day) == 1])
+  
+  hour <- sample(9:22, n)
+  
+   hour[nchar(hour) == 1] <- 
+    str_c("0", hour[nchar(hour) == 1])
+   
+  dates <- str_c(day,"/01/2024 ", hour, ":00:00")
+  sort(dates)
+}
+
+random_dates(5)
+```
+
+### Compose fake responses
+
+```{r compose_fake_responses}
+
+chaplains <- select(chaplains, email_address)
+
+n_responses <- sample(3:8, replace = TRUE, size = nrow(chaplains))
+
+chaplains <- mutate(chaplains, n_responses = n_responses)
+
+chaplains <- 
+  group_by(chaplains, email_address) |>
+  reframe(dates = random_dates(n_responses))
+
+head(chaplains)
+
+chaplains <-
+  group_by(chaplains, email_address) |> 
+  mutate(
+    since = c(dates[[1]],rep(NA, n() - 1)),
+    timestamp = lead(dates)
+) |> 
+  filter(!is.na(timestamp))
+
+head(chaplains)
+
+chaplains <- select(chaplains, -dates)
+
+chaplains <- 
+  mutate(chaplains,
+       people = fake_people(n()),
+       concerns = fake_concerns(n()),
+       meaningful_conversations = round(runif(n(), min = 0, max = 6 )),
+       general_conversations = round(runif(n(), min = 2, max = 10)),
+       since = str_remove(since, " \\d\\d:\\d\\d:\\d\\d"))
+
+chaplains_labelled <- 
+  select(
+    chaplains,
+    timestamp,
+    email_address,
+    since,
+    meaningful_conversations,
+    general_conversations,
+    people,
+    concerns
+  ) |> 
+  arrange(timestamp) |> 
+  mutate(across(everything(), \(x) replace(x, is.na(x), "")))
+
+vroom_write(chaplains_labelled, here("fake-chaplains.csv"), delim = ",")
 ```
