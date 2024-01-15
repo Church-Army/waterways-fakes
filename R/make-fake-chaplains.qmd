@@ -13,9 +13,9 @@ We'd like to mock up a working example of a proposed data collection solution. T
 
 ```{r libraries}
 library(conflicted)
-
 library(here)
 library(fs)
+library(lubridate)
 
 library(dplyr)
 conflicted::conflicts_prefer(dplyr::filter)
@@ -30,7 +30,9 @@ library(vroom)
 ```{r generate_random_names}
 set.seed(1992)
 
-n_names <- 15
+respondents <- 500
+
+n_names <- 90
 
 first_names <- randomNames(n_names, ethnicity = 5, which.names = "first")
 last_names  <- randomNames(n_names, ethnicity = 5, which.names = "last")
@@ -45,6 +47,9 @@ chaplains <- tibble(first_name = first_names,
                     email_address = emails)
 
 head(chaplains)
+
+chaplains <-
+  chaplains[sample(1:nrow(chaplains), replace = TRUE, size = respondents), ]
 ```
 
 ## Make fake responses
@@ -110,24 +115,53 @@ fake_concerns(3)
 ### Response date faking
 
 ```{r response_date_faking}
-random_dates <- function(n){
-  day <-
-    sample(1:30, n) |> 
-    as.character()
+trail_zero <- function(x){
+  x[nchar(x) == 1] <- str_c("0", x[nchar(x) == 1])
+  x
+}
 
-  day[nchar(day) == 1] <- 
-    str_c("0", day[nchar(day) == 1])
+random_dates <- function(n){
+  day <- sample(1:28, n, replace = TRUE) |> 
+    trail_zero()
+
+  hour <- sample(9:22, n, replace = TRUE) |> 
+    trail_zero()
+
+  month <- sample(1:12, n, replace = TRUE) |> 
+    trail_zero()
   
-  hour <- sample(9:22, n)
-  
-   hour[nchar(hour) == 1] <- 
-    str_c("0", hour[nchar(hour) == 1])
-   
-  dates <- str_c(day,"/01/2024 ", hour, ":00:00")
+  dates <- str_c(day, "/", month, "/2023 ", hour, ":00:00")
   sort(dates)
 }
 
 random_dates(5)
+```
+
+### Fake multiple choice selections
+
+```{r fake_multiple_choices}
+fake_multiple_choice <- function(choices, n, probs = NULL){
+  sample(choices, replace = TRUE, size = n, prob = probs)
+}
+```
+
+### Get month label from date
+
+```{r get_month_label_from_date}
+month_label <- function(date){
+  month <- month(date)
+  
+  month <- 
+    month -
+    sample(0:2,
+           size = length(month),
+           replace = TRUE,
+           prob = c(10, 2.5, 1))
+  
+  month[month <= 0] <- 12 + month[month <= 0]
+  
+  month.name[month]
+}
 ```
 
 ### Compose fake responses
@@ -136,42 +170,33 @@ random_dates(5)
 
 chaplains <- select(chaplains, email_address)
 
-n_responses <- sample(3:8, replace = TRUE, size = nrow(chaplains))
+n_responses <- sample(1:25, replace = TRUE, size = nrow(chaplains))
 
 chaplains <- mutate(chaplains, n_responses = n_responses)
 
 chaplains <- 
-  group_by(chaplains, email_address) |>
-  reframe(dates = random_dates(n_responses))
-
-head(chaplains)
-
-chaplains <-
-  group_by(chaplains, email_address) |> 
-  mutate(
-    since = c(dates[[1]],rep(NA, n() - 1)),
-    timestamp = lead(dates)
-) |> 
-  filter(!is.na(timestamp))
-
-head(chaplains)
-
-chaplains <- select(chaplains, -dates)
-
-chaplains <- 
   mutate(chaplains,
-       people = fake_people(n()),
-       concerns = fake_concerns(n()),
-       meaningful_conversations = round(runif(n(), min = 0, max = 6 )),
-       general_conversations = round(runif(n(), min = 2, max = 10)),
-       since = str_remove(since, " \\d\\d:\\d\\d:\\d\\d"))
+         timestamp = random_dates(n()),
+         people = fake_people(n()),
+         concerns = fake_concerns(n()),
+         meaningful_conversations =
+         fake_multiple_choice(
+           choices = c("None", "One", "Two", "Three", "Four", "Five or more"),
+           probs = c(0.3, 1, 1.1, 0.7, 0.7, 0.3),
+           n = n()),
+        general_conversations =
+          fake_multiple_choice(
+            choices = c("None", "One", "Two", "Three", "Four", "Five or more"),
+            probs = c(0.3, 1, 1.1, 0.7, 0.7, 0.3),
+            n = n()),
+        month = month_label(timestamp))
 
 chaplains_labelled <- 
   select(
     chaplains,
     timestamp,
     email_address,
-    since,
+    month,
     meaningful_conversations,
     general_conversations,
     people,
